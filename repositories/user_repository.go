@@ -1,23 +1,34 @@
 package repositories
 
-import "quickstart-go-jwt-mongodb/internal"
+import (
+	"context"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"quickstart-go-jwt-mongodb/internal"
+)
 
 type userRepo struct {
-	mongoDb *internal.MongoDatabase
+	mongoDb    internal.MongoDatabase
+	collection string
+	timeout    context.Context
+	cancelFun  context.CancelFunc
 }
 
-func (u *userRepo) CreateOne(model *interface{}) error {
-	//TODO implement me
-	panic("implement me")
+func (u *userRepo) CreateOne(context context.Context, model interface{}) (primitive.ObjectID, error) {
+	id, err := u.mongoDb.Collection(u.collection).InsertOne(context, model)
+	if err != nil {
+		return primitive.NilObjectID, err
+	}
+	return id.InsertedID.(primitive.ObjectID), nil
 }
 
-func (u *userRepo) CreateMany(model *[]interface{}) error {
-	//TODO implement me
-	panic("implement me")
+func (u *userRepo) CreateMany(context context.Context, model []interface{}) ([]primitive.ObjectID, error) {
+
+	return nil, nil
 }
 
-func NewUserRepository(mongoDb *internal.MongoDatabase) CrudOperation {
+func NewUserRepository(mongoDb internal.MongoDatabase) CrudOperation {
 	return &userRepo{
-		mongoDb: mongoDb,
+		mongoDb:    mongoDb,
+		collection: "users",
 	}
 }
