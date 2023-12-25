@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -15,9 +14,8 @@ type (
 	HttpVerb     string
 	Request      = http.Request
 	WithResource struct {
-		HttpRequest *HttpRequestHandler
-		Context     *context.Context
-		MongoClient *internal.MongoClient
+		HttpRequest   *HttpRequestHandler
+		MongoDatabase internal.MongoDatabase
 	}
 	// HandleRequest Declare how HTTP route needs to be handled
 	HandleRequest struct {

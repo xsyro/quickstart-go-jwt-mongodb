@@ -14,12 +14,18 @@ import (
 
 type (
 	MongoClient struct {
-		Client  *mongo.Client
-		ctx     context.Context
-		timeOut time.Duration
+		client   *mongo.Client
+		Database *mongo.Database
+		ctx      context.Context
+		timeOut  time.Duration
 	}
-	MongoCollection interface {
-		*mongo.Client
+
+	// MongoDatabase Implicitly import mongo.Client functions
+	MongoDatabase interface {
+		Client() *mongo.Client
+		CreateCollection(ctx context.Context, name string, opts ...*options.CreateCollectionOptions) error
+		Collection(name string, opts ...*options.CollectionOptions) *mongo.Collection
+		RunCommand(ctx context.Context, runCommand interface{}, opts ...*options.RunCmdOptions) *mongo.SingleResult
 	}
 )
 
@@ -33,8 +39,8 @@ var (
 )
 
 // NewMongoDbConn Singleton instance
-// Reuse this Client. You can use this same Client instance to perform multiple tasks, instead of creating a new one each time.
-// The Client type is safe for concurrent use by multiple goroutines
+// Reuse this client. You can use this same client instance to perform multiple tasks, instead of creating a new one each time.
+// The client type is safe for concurrent use by multiple goroutines
 func NewMongoDbConn() *MongoClient {
 	var (
 		err         error
@@ -76,10 +82,12 @@ func NewMongoDbConn() *MongoClient {
 	}
 	log.Debugf("successfully connected to MongoDB %s", mongoUri)
 
+	var database = client.Database(os.Getenv("MONGO_DB_NAME"))
 	return &MongoClient{
-		Client:  client,
-		ctx:     ctx,
-		timeOut: timeout,
+		client:   client,
+		Database: database,
+		ctx:      ctx,
+		timeOut:  timeout,
 	}
 }
 
@@ -89,5 +97,5 @@ func (c *MongoClient) CloseClient() {
 			log.Warn("No active MongoDB connection to close.")
 		}
 	}()
-	_ = c.Client.Disconnect(c.ctx)
+	_ = c.client.Disconnect(c.ctx)
 }
