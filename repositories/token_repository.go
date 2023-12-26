@@ -10,6 +10,11 @@ type tokenRepo struct {
 	mongoDb internal.MongoDatabase
 }
 
+func (t *tokenRepo) FindOne(context context.Context, model interface{}, filters ...Filter) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (t *tokenRepo) CreateOne(context context.Context, model interface{}) (primitive.ObjectID, error) {
 	//TODO implement me
 	panic("implement me")

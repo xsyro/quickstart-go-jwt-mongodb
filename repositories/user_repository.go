@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"quickstart-go-jwt-mongodb/internal"
 )
 
@@ -11,6 +13,12 @@ type userRepo struct {
 	collection string
 	timeout    context.Context
 	cancelFun  context.CancelFunc
+}
+
+func (u *userRepo) FindOne(context context.Context, model interface{}, filters ...Filter) bool {
+	singleResult := u.mongoDb.Collection(u.collection).FindOne(context, filterToBsonFilter(filters...))
+	_ = singleResult.Decode(&model)
+	return !errors.Is(singleResult.Err(), mongo.ErrNoDocuments)
 }
 
 func (u *userRepo) CreateOne(context context.Context, model interface{}) (primitive.ObjectID, error) {
