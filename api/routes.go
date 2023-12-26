@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -23,9 +25,10 @@ type (
 		Method   HttpVerb
 		Callback func(w http.ResponseWriter, req *http.Request)
 	}
-	HttpErrorResp struct {
-		IsError bool   `json:"is_error"`
-		Message string `json:"message"`
+	HttpResponseBody struct {
+		IsError bool        `json:"is_error"`
+		Message string      `json:"message"`
+		Data    interface{} `json:"data,omitempty"`
 	}
 	HttpRequestHandler struct {
 		Router *mux.Router
@@ -67,4 +70,35 @@ func (appRouter *HttpRequestHandler) Serve() {
 		log.Error(err)
 		return
 	}
+}
+
+func parseReqToJson(req *Request, obj interface{}) error {
+	defer req.Body.Close()
+	err := json.NewDecoder(req.Body).Decode(&obj)
+	if err != nil {
+		return err
+	}
+	return validator.New().Struct(obj)
+}
+
+func httpResponse(w http.ResponseWriter, statusCode int, obj interface{}) {
+	err := json.NewEncoder(w).Encode(HttpResponseBody{
+		IsError: false,
+		Message: "Request Completed",
+		Data:    obj,
+	})
+	if err != nil {
+		log.Error("error sending http response")
+	}
+	w.WriteHeader(statusCode)
+}
+
+func httpError(w http.ResponseWriter, err error) {
+	if json.NewEncoder(w).Encode(HttpResponseBody{
+		IsError: true,
+		Message: fmt.Sprintf("%s", err),
+	}) != nil {
+		log.Error("error sending http response")
+	}
+	w.WriteHeader(http.StatusBadRequest)
 }

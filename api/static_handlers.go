@@ -1,24 +1,16 @@
 package api
 
 import (
-	"context"
-	log "github.com/sirupsen/logrus"
 	"net/http"
-	"quickstart-go-jwt-mongodb/internal"
-	"quickstart-go-jwt-mongodb/types"
 )
 
-func index(mongoDb internal.MongoDatabase) HandleRequest {
+func index() HandleRequest {
 	return HandleRequest{
 		Uri:    "/",
 		Method: GET,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
-			one, err := mongoDb.Collection("users").InsertOne(context.Background(), types.User{})
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Info(one)
+			_, _ = w.Write([]byte("Hello!"))
+			return
 		},
 	}
 }
@@ -36,6 +28,6 @@ func healthCheck() HandleRequest {
 }
 
 func StaticHandlers(resources *WithResource) {
-	healthCheck()
-	index(resources.MongoDatabase)
+	resources.HttpRequest.HandleRequest(healthCheck())
+	resources.HttpRequest.HandleRequest(index())
 }
