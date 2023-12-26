@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
@@ -9,6 +11,9 @@ import (
 	"net/http"
 	"os"
 	"quickstart-go-jwt-mongodb/internal"
+	"quickstart-go-jwt-mongodb/services"
+	"quickstart-go-jwt-mongodb/types"
+	"strings"
 	"time"
 )
 
@@ -21,9 +26,11 @@ type (
 	}
 	// HandleRequest Declare how HTTP route needs to be handled
 	HandleRequest struct {
-		Uri      string
-		Method   HttpVerb
-		Callback func(w http.ResponseWriter, req *http.Request)
+		Uri         string
+		Method      HttpVerb
+		Secure      bool
+		PermitRoles []string
+		Callback    func(w http.ResponseWriter, req *http.Request)
 	}
 	HttpResponseBody struct {
 		IsError bool        `json:"is_error"`
@@ -31,8 +38,9 @@ type (
 		Data    interface{} `json:"data,omitempty"`
 	}
 	HttpRequestHandler struct {
-		Router *mux.Router
-		port   string
+		Router      *mux.Router
+		port        string
+		httpTimeout context.Context
 	}
 )
 
@@ -43,10 +51,16 @@ const (
 	DELETE HttpVerb = "DELETE"
 )
 
-func NewHttpRequestHandler() *HttpRequestHandler {
+const (
+	HeaderName   = "Authorization"
+	HeaderScheme = "Bearer"
+)
+
+func NewHttpRequestHandler(httpTimeoutCtx context.Context) *HttpRequestHandler {
 	return &HttpRequestHandler{
-		Router: mux.NewRouter().PathPrefix(os.Getenv("BASE_URI_PREFIX")).Subrouter(),
-		port:   os.Getenv("HTTP_PORT"),
+		Router:      mux.NewRouter().PathPrefix(os.Getenv("BASE_URI_PREFIX")).Subrouter(),
+		port:        os.Getenv("HTTP_PORT"),
+		httpTimeout: httpTimeoutCtx,
 	}
 }
 
@@ -55,7 +69,75 @@ func (appRouter *HttpRequestHandler) HandleMiddlewares(middlewares ...mux.Middle
 }
 
 func (appRouter *HttpRequestHandler) HandleRequest(handler HandleRequest) {
+	appRouter.authorizationMiddleware(handler)
 	appRouter.Router.HandleFunc(handler.Uri, handler.Callback).Methods(string(handler.Method), http.MethodOptions)
+}
+
+func (appRouter *HttpRequestHandler) authorizationMiddleware(handler HandleRequest) {
+	appRouter.HandleMiddlewares(appRouter.securedMiddleware(handler))
+}
+
+func (appRouter HttpRequestHandler) securedMiddleware(request HandleRequest) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+
+			if req.Method == http.MethodOptions {
+				next.ServeHTTP(w, req)
+			}
+
+			//Check if the HandleRequest is not Secured. Otherwise, continue with security validation checks
+			if !request.Secure {
+				next.ServeHTTP(w, req)
+				return
+			}
+
+			if req.Header[HeaderName] == nil {
+				accessDenied(w, errors.New(fmt.Sprintf("'%s' not found int the HTTP Request Header", HeaderName)))
+				return
+			}
+			jwtTokenizedStr := strings.TrimLeft(strings.Trim(req.Header[HeaderName][0], " "), HeaderScheme)
+			jwt := services.NewJwtService(appRouter.httpTimeout)
+			claims, err := jwt.ParseJWT(jwtTokenizedStr)
+			if err != nil {
+				w.Header().Add("Expires", "true")
+				accessDenied(w, errors.New("access denied"))
+				return
+			}
+
+			var user types.User
+			jsonData, _ := json.Marshal(claims["obj"])
+			err = json.NewDecoder(strings.NewReader(string(jsonData))).Decode(&user)
+
+			if err != nil {
+				log.Error("Error", err)
+			}
+			//var allowUrls []string
+
+			//allowUrls := AclUrl[user.Roles]
+
+			//switch user.Roles {
+			//case "CASHIER", "ACCOUNTANT", "OPERATION":
+			//	for i := range allowUrls {
+			//		if strings.HasPrefix(req.URL.Path, allowUrls[i]) {
+			//			next.ServeHTTP(w, req)
+			//			return
+			//		}
+			//	}
+			//	//var err = routes.HttpErrorResp{}
+			//	//err = routes.SetHttpErrorResp(err, "Not Authorized")
+			//	//routes.WriteHttpResponse(w, http.StatusUnauthorized, &err)
+			//
+			//	next.ServeHTTP(w, req)
+			//	return
+
+			//default:
+			//}
+			//
+
+			next.ServeHTTP(w, req)
+
+		})
+	}
 }
 
 func (appRouter *HttpRequestHandler) Serve() {
@@ -101,4 +183,14 @@ func httpError(w http.ResponseWriter, err error) {
 		log.Error("error sending http response")
 	}
 	w.WriteHeader(http.StatusBadRequest)
+}
+
+func accessDenied(w http.ResponseWriter, err error) {
+	if json.NewEncoder(w).Encode(HttpResponseBody{
+		IsError: true,
+		Message: fmt.Sprintf("%s", err),
+	}) != nil {
+		log.Error("error sending http response")
+	}
+	w.WriteHeader(http.StatusUnauthorized)
 }

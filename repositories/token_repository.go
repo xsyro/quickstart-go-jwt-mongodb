@@ -11,6 +11,16 @@ type tokenRepo struct {
 	collection string
 }
 
+func (t *tokenRepo) FindPaginate(context context.Context, currentPage, perPage int, results interface{}, filters ...Filter) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (t *tokenRepo) FindAll(context context.Context, results interface{}, filters ...Filter) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (t *tokenRepo) FindOne(context context.Context, model interface{}, filters ...Filter) bool {
 	//TODO implement me
 	panic("implement me")

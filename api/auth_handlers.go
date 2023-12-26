@@ -23,6 +23,7 @@ func createAccount(mongoDb internal.MongoDatabase) HandleRequest {
 	return HandleRequest{
 		Uri:    "/account/create",
 		Method: POST,
+		Secure: false,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -68,6 +69,7 @@ func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
 	return HandleRequest{
 		Uri:    "/account/auth",
 		Method: POST,
+		Secure: false,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -95,8 +97,8 @@ func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
 			jwtService := services.NewJwtService(ctx)
 			tokenizedStr, err := jwtService.GenerateJWT(user)
 			token := types.Token{
-				BaseModel: types.NewBaseModel(),
-				Token:     tokenizedStr,
+				BaseModel:   types.NewBaseModel(),
+				AccessToken: tokenizedStr,
 			}
 			tokenId, err := tokenRepository.CreateOne(ctx, token)
 			if err != nil {

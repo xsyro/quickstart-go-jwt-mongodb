@@ -14,6 +14,8 @@ type CrudOperation interface {
 	CreateOne(context context.Context, model interface{}) (primitive.ObjectID, error)
 	CreateMany(context context.Context, model []interface{}) ([]primitive.ObjectID, error)
 	FindOne(context context.Context, model interface{}, filters ...Filter) bool
+	FindAll(context context.Context, results interface{}, filters ...Filter) error
+	FindPaginate(context context.Context, currentPage, perPage int, results interface{}, filters ...Filter) error
 }
 
 func filterToBsonFilter(filters ...Filter) bson.D {

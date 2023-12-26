@@ -16,6 +16,19 @@ type userRepo struct {
 	cancelFun  context.CancelFunc
 }
 
+func (u *userRepo) FindPaginate(context context.Context, currentPage, perPage int, results interface{}, filters ...Filter) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (u *userRepo) FindAll(context context.Context, results interface{}, filters ...Filter) error {
+	find, err := u.mongoDb.Collection(u.collection).Find(context, filterToBsonFilter(filters...))
+	if err != nil {
+		return err
+	}
+	return find.All(context, results)
+}
+
 func (u *userRepo) FindOne(context context.Context, model interface{}, filters ...Filter) bool {
 	singleResult := u.mongoDb.Collection(u.collection).FindOne(context, filterToBsonFilter(filters...))
 	err := singleResult.Decode(model)

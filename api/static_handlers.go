@@ -7,6 +7,7 @@ import (
 func index() HandleRequest {
 	return HandleRequest{
 		Uri:    "/",
+		Secure: false,
 		Method: GET,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte("Hello!"))
@@ -19,6 +20,7 @@ func index() HandleRequest {
 func healthCheck() HandleRequest {
 	return HandleRequest{
 		Uri:    "/status",
+		Secure: false,
 		Method: GET,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte("Good!"))
