@@ -4,10 +4,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"quickstart-go-jwt-mongodb/api"
 	"quickstart-go-jwt-mongodb/internal"
+	"quickstart-go-jwt-mongodb/middleware"
 )
 
 func main() {
-
+	log.SetLevel(log.DebugLevel)
 	var (
 		mongoClient        *internal.MongoClient
 		httpRequestHandler *api.HttpRequestHandler
@@ -28,12 +29,14 @@ func main() {
 	httpRequestHandler = api.NewHttpRequestHandler()
 
 	//Use middleware to intermediate every requests
+	httpRequestHandler.HandleMiddlewares(middleware.HeadersMiddleware())
 
 	apiResources := api.WithResource{
 		HttpRequest:   httpRequestHandler,
 		MongoDatabase: mongoDb,
 	}
 
+	api.StaticHandlers(&apiResources)
 	api.AuthHandlers(&apiResources)
 	api.UserHandlers(&apiResources)
 
