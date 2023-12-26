@@ -28,6 +28,8 @@ type (
 		Address             Address   `bson:"address,inline,omitempty" json:"address,omitempty"`
 	}
 	Token struct {
+		BaseModel `bson:"-,inline"`
+		Token     string `bson:"token" json:"token"`
 	}
 )
 

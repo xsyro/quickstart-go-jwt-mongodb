@@ -7,7 +7,8 @@ import (
 )
 
 type tokenRepo struct {
-	mongoDb internal.MongoDatabase
+	mongoDb    internal.MongoDatabase
+	collection string
 }
 
 func (t *tokenRepo) FindOne(context context.Context, model interface{}, filters ...Filter) bool {
@@ -16,8 +17,11 @@ func (t *tokenRepo) FindOne(context context.Context, model interface{}, filters 
 }
 
 func (t *tokenRepo) CreateOne(context context.Context, model interface{}) (primitive.ObjectID, error) {
-	//TODO implement me
-	panic("implement me")
+	id, err := t.mongoDb.Collection(t.collection).InsertOne(context, model)
+	if err != nil {
+		return primitive.NilObjectID, err
+	}
+	return id.InsertedID.(primitive.ObjectID), nil
 }
 
 func (t *tokenRepo) CreateMany(context context.Context, model []interface{}) ([]primitive.ObjectID, error) {
@@ -27,6 +31,7 @@ func (t *tokenRepo) CreateMany(context context.Context, model []interface{}) ([]
 
 func NewTokenRepository(mongoDb internal.MongoDatabase) CrudOperation {
 	return &tokenRepo{
-		mongoDb: mongoDb,
+		mongoDb:    mongoDb,
+		collection: "tokens",
 	}
 }
