@@ -19,6 +19,8 @@ func AuthHandlers(resources *WithResource) {
 	resources.HttpRequest.RequestRegistry(createAccount(resources.MongoDatabase))
 	resources.HttpRequest.RequestRegistry(authenticate(resources.MongoDatabase))
 	resources.HttpRequest.RequestRegistry(refreshToken(resources.MongoDatabase))
+	resources.HttpRequest.RequestRegistry(listCustomers(resources.MongoDatabase))
+
 }
 
 func createAccount(database internal.MongoDatabase) HttpRequest {
@@ -176,6 +178,29 @@ func refreshToken(database internal.MongoDatabase) HttpRequest {
 			token.ID = id
 			httpResponse(w, http.StatusCreated, token)
 			return
+		},
+	}
+}
+
+// listCustomers - Empty '[]PermitRoles' is wildcard access to all users.
+// By simply excluding the PermitRole filed from the HttpRequest struct, it permits all secured users to
+// access the page
+func listCustomers(database internal.MongoDatabase) HttpRequest {
+	return HttpRequest{
+		Uri:    "/user/customer-records",
+		Method: GET,
+		Secure: true,
+		Callback: func(responseWriter http.ResponseWriter, req *http.Request) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			userRepository := repositories.NewUserRepository(database)
+			var users []types.User
+			err := userRepository.FindAll(ctx, &users)
+			if err != nil {
+				httpError(responseWriter, err)
+				return
+			}
+			httpResponse(responseWriter, http.StatusOK, users)
 		},
 	}
 }
