@@ -9,10 +9,11 @@ import (
 	"time"
 )
 
-func listCustomers(database internal.MongoDatabase) HandleRequest {
-	return HandleRequest{
+func listCustomers(database internal.MongoDatabase) HttpRequest {
+	return HttpRequest{
 		Uri:    "/user/customer-records",
 		Method: GET,
+		Secure: true,
 		Callback: func(responseWriter http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -30,6 +31,6 @@ func listCustomers(database internal.MongoDatabase) HandleRequest {
 
 func UserHandlers(resources *WithResource) {
 
-	resources.HttpRequest.HandleRequest(listCustomers(resources.MongoDatabase))
+	resources.HttpRequest.RequestRegistry(listCustomers(resources.MongoDatabase))
 
 }

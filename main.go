@@ -13,9 +13,10 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	var (
 		mongoClient        *internal.MongoClient
-		httpRequestHandler *api.HttpRequestHandler
+		httpRequestHandler api.RequestHandler
 	)
 	timeout, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	httpRequestHandler = api.NewHttpRequestHandler(timeout)
 
 	defer func() {
 		log.Debug("HTTP PORT TERMINATING...CLOSING RESOURCES!!!")
@@ -30,18 +31,17 @@ func main() {
 		log.Warnf("[RECOVERY_FROM_FAILURE] %v", r)
 	}
 
-	httpRequestHandler = api.NewHttpRequestHandler(timeout)
 	apiResources := api.WithResource{
 		HttpRequest:   httpRequestHandler,
 		MongoDatabase: mongoDb,
 	}
 
-	//Use middleware to intermediate every requests
-	httpRequestHandler.HandleMiddlewares(middleware.HeadersMiddleware())
-
 	api.StaticHandlers(&apiResources)
 	api.AuthHandlers(&apiResources)
 	api.UserHandlers(&apiResources)
+
+	//Use middleware to intermediate every requests
+	httpRequestHandler.HandleMiddlewares(middleware.HeadersMiddleware(), httpRequestHandler.SecureMiddleware())
 
 	httpRequestHandler.Serve()
 

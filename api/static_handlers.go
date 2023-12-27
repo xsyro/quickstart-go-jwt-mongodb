@@ -4,8 +4,8 @@ import (
 	"net/http"
 )
 
-func index() HandleRequest {
-	return HandleRequest{
+func index() HttpRequest {
+	return HttpRequest{
 		Uri:    "/",
 		Secure: false,
 		Method: GET,
@@ -17,8 +17,8 @@ func index() HandleRequest {
 }
 
 // healthCheck return HTTP_STATUS_CODE of 200 to inform container service of it activeness
-func healthCheck() HandleRequest {
-	return HandleRequest{
+func healthCheck() HttpRequest {
+	return HttpRequest{
 		Uri:    "/status",
 		Secure: false,
 		Method: GET,
@@ -30,6 +30,6 @@ func healthCheck() HandleRequest {
 }
 
 func StaticHandlers(resources *WithResource) {
-	resources.HttpRequest.HandleRequest(healthCheck())
-	resources.HttpRequest.HandleRequest(index())
+	resources.HttpRequest.RequestRegistry(healthCheck())
+	resources.HttpRequest.RequestRegistry(index())
 }

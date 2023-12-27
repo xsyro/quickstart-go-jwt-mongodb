@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
+	"math"
 	"net/http"
 	"quickstart-go-jwt-mongodb/internal"
 	"quickstart-go-jwt-mongodb/repositories"
@@ -15,12 +16,13 @@ import (
 )
 
 func AuthHandlers(resources *WithResource) {
-	resources.HttpRequest.HandleRequest(createAccount(resources.MongoDatabase))
-	resources.HttpRequest.HandleRequest(authenticate(resources.MongoDatabase))
+	resources.HttpRequest.RequestRegistry(createAccount(resources.MongoDatabase))
+	resources.HttpRequest.RequestRegistry(authenticate(resources.MongoDatabase))
+	resources.HttpRequest.RequestRegistry(refreshToken(resources.MongoDatabase))
 }
 
-func createAccount(mongoDb internal.MongoDatabase) HandleRequest {
-	return HandleRequest{
+func createAccount(database internal.MongoDatabase) HttpRequest {
+	return HttpRequest{
 		Uri:    "/account/create",
 		Method: POST,
 		Secure: false,
@@ -36,7 +38,7 @@ func createAccount(mongoDb internal.MongoDatabase) HandleRequest {
 				return
 			}
 
-			userRepository := repositories.NewUserRepository(mongoDb)
+			userRepository := repositories.NewUserRepository(database)
 			if userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: user.Email}) {
 				httpError(w, errors.New(fmt.Sprintf("%s already exists", user.Email)))
 				return
@@ -65,8 +67,8 @@ type auth struct {
 	Password string `json:"password"`
 }
 
-func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
-	return HandleRequest{
+func authenticate(database internal.MongoDatabase) HttpRequest {
+	return HttpRequest{
 		Uri:    "/account/auth",
 		Method: POST,
 		Secure: false,
@@ -81,8 +83,8 @@ func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
 				return
 			}
 
-			userRepository := repositories.NewUserRepository(mongoDb)
-			tokenRepository := repositories.NewTokenRepository(mongoDb)
+			userRepository := repositories.NewUserRepository(database)
+			tokenRepository := repositories.NewTokenRepository(database)
 			findOne := userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: auth.Username})
 			if !findOne {
 				httpError(w, errors.New(fmt.Sprintf("Invalid Username. %s does not exists", auth.Username)))
@@ -95,11 +97,22 @@ func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
 			}
 
 			jwtService := services.NewJwtService(ctx)
-			tokenizedStr, err := jwtService.GenerateJWT(user)
+			accessTokenStr, err := jwtService.GenerateJWT(user, 30*time.Minute)
+			refreshTokenStr, err := jwtService.GenerateJWT(user.Email, 24*time.Hour)
 			token := types.Token{
-				BaseModel:   types.NewBaseModel(),
-				AccessToken: tokenizedStr,
+				BaseModel:    types.NewBaseModel(),
+				AccessToken:  accessTokenStr,
+				RefreshToken: refreshTokenStr,
 			}
+			http.SetCookie(w, &http.Cookie{
+				Name:     "jwt",
+				Value:    refreshTokenStr,
+				Expires:  time.Now().Add(25 * time.Hour),
+				MaxAge:   60 * 60 * 24,
+				Secure:   true,
+				HttpOnly: true,
+				SameSite: http.SameSiteNoneMode,
+			})
 			tokenId, err := tokenRepository.CreateOne(ctx, token)
 			if err != nil {
 				log.Error("Unable to persist token generated", err)
@@ -111,6 +124,56 @@ func authenticate(mongoDb internal.MongoDatabase) HandleRequest {
 				return
 			}
 
+			httpResponse(w, http.StatusCreated, token)
+			return
+		},
+	}
+}
+
+func refreshToken(database internal.MongoDatabase) HttpRequest {
+	return HttpRequest{
+		Uri:    "/account/refresh-token",
+		Method: GET,
+		Secure: false,
+		Callback: func(w http.ResponseWriter, req *http.Request) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cookie, err := req.Cookie("jwt")
+			if err != nil {
+				accessDenied(w, errors.New("'jwt' cookie do not exist in cookie-header"))
+				return
+			}
+			jwtService := services.NewJwtService(ctx)
+			jwt, err := jwtService.ParseJWT(cookie.Value)
+			if err != nil {
+				accessDenied(w, errors.New("invalid jwt token supplied"))
+				return
+			}
+			modf, frac := math.Modf(jwt["exp"].(float64))
+			expiredAt := time.Unix(int64(modf), int64(frac*(1e9)))
+			if time.Now().After(expiredAt) {
+				accessDenied(w, errors.New("unauthorized. Token expired"))
+				return
+			}
+			email := jwt["obj"]
+
+			userRepository := repositories.NewUserRepository(database)
+			var user types.User
+			userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: email})
+
+			//Create a one-time only access token again
+			accessTokenStr, err := jwtService.GenerateJWT(user, 10*time.Hour)
+			token := types.Token{
+				BaseModel:   types.NewBaseModel(),
+				AccessToken: accessTokenStr,
+			}
+
+			tokenRepository := repositories.NewTokenRepository(database)
+			id, err := tokenRepository.CreateOne(ctx, token)
+			if err != nil {
+				return
+			}
+			token.ID = id
 			httpResponse(w, http.StatusCreated, token)
 			return
 		},

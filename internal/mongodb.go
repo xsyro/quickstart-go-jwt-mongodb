@@ -68,7 +68,7 @@ func NewMongoDbConn() *MongoClient {
 	err = client.Ping(ctx, nil)
 
 	if err != nil && currentRetryCount <= maxRetryCount {
-		log.Errorf("[MongoDB] connect attempt failed. Current retry %d of %d.\n%v", currentRetryCount, maxRetryCount, err)
+		log.Errorf("[MongoDB] connect attempt failed. ActiveRequest retry %d of %d.\n%v", currentRetryCount, maxRetryCount, err)
 		currentRetryCount++
 		NewMongoDbConn()
 	}

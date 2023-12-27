@@ -28,14 +28,15 @@ func NewJwtService(ctx context.Context) *jwtService {
 	}
 }
 
-func (j *jwtService) GenerateJWT(payload interface{}) (string, error) {
+func (j *jwtService) GenerateJWT(payload interface{}, expiresAt time.Duration) (string, error) {
 	token := jwt.New(JwtSigningAlg)
 	claims := token.Claims.(jwt.MapClaims)
 
 	claims["obj"] = payload
 	claims["iat"] = time.Now().Unix()
-	claims["exp"] = time.Now().Add(12 * time.Hour).Unix()
+	claims["exp"] = time.Now().Add(expiresAt).Unix()
 
+	log.Infoln(claims)
 	tokenStr, err := token.SignedString(jwtSigningKey)
 
 	if err != nil {
@@ -50,7 +51,7 @@ func (j *jwtService) ParseJWT(tokenizedString string) (map[string]any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("There was an error in parsing")
 		}
-		return []byte(jwtSigningKey), nil
+		return jwtSigningKey, nil
 	})
 	if claims, ok := jwtToken.Claims.(jwt.MapClaims); ok && jwtToken.Valid {
 		obj := make(map[string]any)
