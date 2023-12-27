@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -28,15 +29,22 @@ func NewJwtService(ctx context.Context) *jwtService {
 	}
 }
 
-func (j *jwtService) GenerateJWT(payload interface{}, expiresAt time.Duration) (string, error) {
+// GenerateJWT to generate a JWT Payload
+// sub must not be a JSON string. This would be done by the GenerateJWT method
+func (j *jwtService) GenerateJWT(sub interface{}, expiresAt time.Duration, extraClaims ...map[string]any) (string, error) {
 	token := jwt.New(JwtSigningAlg)
 	claims := token.Claims.(jwt.MapClaims)
 
-	claims["obj"] = payload
-	claims["iat"] = time.Now().Unix()
-	claims["exp"] = time.Now().Add(expiresAt).Unix()
+	marshal, err := json.Marshal(sub)
+	claims["sub"] = string(marshal)
+	claims["iat"] = jwt.NewNumericDate(time.Now())
+	claims["exp"] = jwt.NewNumericDate(time.Now().Add(expiresAt))
+	for i := range extraClaims {
+		for k, v := range extraClaims[i] {
+			claims[k] = v
+		}
+	}
 
-	log.Infoln(claims)
 	tokenStr, err := token.SignedString(jwtSigningKey)
 
 	if err != nil {
@@ -46,20 +54,18 @@ func (j *jwtService) GenerateJWT(payload interface{}, expiresAt time.Duration) (
 	return tokenStr, nil
 }
 
-func (j *jwtService) ParseJWT(tokenizedString string) (map[string]any, error) {
+func (j *jwtService) ClaimToken(tokenizedString string, sub interface{}) (jwt.Claims, error) {
 	jwtToken, err := jwt.Parse(tokenizedString, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("There was an error in parsing")
 		}
 		return jwtSigningKey, nil
 	})
-	if claims, ok := jwtToken.Claims.(jwt.MapClaims); ok && jwtToken.Valid {
-		obj := make(map[string]any)
-		for k, v := range claims {
-			obj[k] = v
-		}
-		return obj, nil
+	claims, ok := jwtToken.Claims.(jwt.MapClaims)
+	subStr, err := claims.GetSubject()
+	err = json.Unmarshal([]byte(subStr), sub)
+	if ok && jwtToken.Valid {
+		return claims, nil
 	}
-
 	return nil, err
 }

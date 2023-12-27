@@ -8,7 +8,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"math"
 	"net/http"
 	"os"
 	"quickstart-go-jwt-mongodb/internal"
@@ -112,28 +111,21 @@ func (appRouter HttpRequestHandler) SecureMiddleware() mux.MiddlewareFunc {
 				return
 			}
 
+			var user types.User
 			jwtTokenizedStr := strings.Trim(strings.TrimLeft(req.Header[HeaderName][0], HeaderScheme), " ")
 			jwt := services.NewJwtService(appRouter.httpTimeout)
-			claims, err := jwt.ParseJWT(jwtTokenizedStr)
+			claims, err := jwt.ClaimToken(jwtTokenizedStr, &user)
 			if err != nil {
 				accessDenied(w, errors.New(fmt.Sprintf("access denied. %v", err)))
 				return
 			}
 
-			modf, frac := math.Modf(claims["exp"].(float64))
-			expiredAt := time.Unix(int64(modf), int64(frac*(1e9)))
-			if time.Now().After(expiredAt) {
+			expirationTime, _ := claims.GetExpirationTime()
+
+			if time.Now().After(expirationTime.Time) {
 				w.Header().Add("Expires", "true")
 				accessDenied(w, errors.New("unauthorized. Token expired"))
 				return
-			}
-
-			var user types.User
-			jsonData, _ := json.Marshal(claims["obj"])
-			err = json.NewDecoder(strings.NewReader(string(jsonData))).Decode(&user)
-			if err != nil {
-				accessDenied(w, errors.New(fmt.Sprintf("access denied. %v", err)))
-				log.Error("Error", err)
 			}
 
 			//Empty 'PermitRoles' signifies wild card ACL. Authorization check isn't required. Just authentication
@@ -193,6 +185,7 @@ func httpResponse(w http.ResponseWriter, statusCode int, obj interface{}) {
 }
 
 func httpError(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusUnauthorized)
 	if json.NewEncoder(w).Encode(HttpResponseBody{
 		IsError: true,
 		Message: fmt.Sprintf("%s", err),
@@ -203,11 +196,11 @@ func httpError(w http.ResponseWriter, err error) {
 }
 
 func accessDenied(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusUnauthorized)
 	if json.NewEncoder(w).Encode(HttpResponseBody{
 		IsError: true,
 		Message: fmt.Sprintf("%s", err),
 	}) != nil {
 		log.Error("error sending http response")
 	}
-	w.WriteHeader(http.StatusUnauthorized)
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
-	"math"
 	"net/http"
 	"quickstart-go-jwt-mongodb/internal"
 	"quickstart-go-jwt-mongodb/repositories"
@@ -99,8 +98,11 @@ func authenticate(database internal.MongoDatabase) HttpRequest {
 			}
 
 			jwtService := services.NewJwtService(ctx)
-			accessTokenStr, err := jwtService.GenerateJWT(user, 30*time.Minute)
-			refreshTokenStr, err := jwtService.GenerateJWT(user.Email, 24*time.Hour)
+			extraClaims := map[string]any{
+				"iss": req.Host,
+			}
+			accessTokenStr, err := jwtService.GenerateJWT(user, 30*time.Minute, extraClaims)
+			refreshTokenStr, err := jwtService.GenerateJWT(user.Email, 24*time.Hour, extraClaims)
 			token := types.Token{
 				BaseModel:    types.NewBaseModel(),
 				AccessToken:  accessTokenStr,
@@ -141,23 +143,25 @@ func refreshToken(database internal.MongoDatabase) HttpRequest {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			cookie, err := req.Cookie("jwt")
+			var email string
 			if err != nil {
 				accessDenied(w, errors.New("'jwt' cookie do not exist in cookie-header"))
 				return
 			}
 			jwtService := services.NewJwtService(ctx)
-			jwt, err := jwtService.ParseJWT(cookie.Value)
+			jwt, err := jwtService.ClaimToken(cookie.Value, &email)
 			if err != nil {
 				accessDenied(w, errors.New("invalid jwt token supplied"))
 				return
 			}
-			modf, frac := math.Modf(jwt["exp"].(float64))
-			expiredAt := time.Unix(int64(modf), int64(frac*(1e9)))
-			if time.Now().After(expiredAt) {
+			expirationTime, _ := jwt.GetExpirationTime()
+			if err != nil {
+				return
+			}
+			if time.Now().After(expirationTime.Time) {
 				accessDenied(w, errors.New("unauthorized. Token expired"))
 				return
 			}
-			email := jwt["obj"]
 
 			userRepository := repositories.NewUserRepository(database)
 			var user types.User
