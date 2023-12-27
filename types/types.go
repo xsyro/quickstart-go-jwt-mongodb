@@ -27,10 +27,11 @@ type (
 		Roles               []string  `bson:"roles,omitempty" json:"roles"`
 		Address             Address   `bson:"address,inline,omitempty" json:"address,omitempty"`
 	}
+
 	Token struct {
 		BaseModel    `bson:"-,inline"`
 		AccessToken  string `bson:"access_token" json:"access_token"`
-		RefreshToken string `bson:"refresh_token" json:"-"` //Refresh token shouldn't be viewed on the client-side
+		RefreshToken string `bson:"refresh_token,omitempty" json:"-"` //Refresh token shouldn't be viewed on the client-side
 	}
 )
 

@@ -3,13 +3,19 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
+	"math"
 	"net/http"
 	"os"
 	"quickstart-go-jwt-mongodb/internal"
+	"quickstart-go-jwt-mongodb/services"
+	"quickstart-go-jwt-mongodb/types"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -59,9 +65,11 @@ const (
 	HeaderScheme = "Bearer"
 )
 
+var pathPrefix = os.Getenv("BASE_URI_PREFIX")
+
 func NewHttpRequestHandler(httpTimeoutCtx context.Context) RequestHandler {
 	return &HttpRequestHandler{
-		router:          mux.NewRouter().PathPrefix(os.Getenv("BASE_URI_PREFIX")).Subrouter(),
+		router:          mux.NewRouter().PathPrefix(pathPrefix).Subrouter(),
 		port:            os.Getenv("HTTP_PORT"),
 		httpTimeout:     httpTimeoutCtx,
 		requestRegistry: []HttpRequest{},
@@ -83,40 +91,63 @@ func (appRouter HttpRequestHandler) SecureMiddleware() mux.MiddlewareFunc {
 			if req.Method == http.MethodOptions {
 				next.ServeHTTP(w, req)
 			}
-			//log.Infoln(appRouter.requestRegistry)
-			next.ServeHTTP(w, req)
 			//Check if the RequestRegistry is not Secured. Otherwise, continue with security validation checks
+			var currentHttpRequest HttpRequest
+			for i := range appRouter.requestRegistry {
+				if fmt.Sprintf("%s%s", pathPrefix, appRouter.requestRegistry[i].Uri) == req.URL.Path {
+					currentHttpRequest = appRouter.requestRegistry[i]
+					break
+				}
+			}
 
-			//if !request.Secure {
-			//	next.ServeHTTP(w, req)
-			//	return
-			//}
-			//
-			//if req.Header[HeaderName] == nil {
-			//	accessDenied(w, errors.New(fmt.Sprintf("'%s' not found in the HTTP Request Header", HeaderName)))
-			//	return
-			//}
-			//
-			//jwtTokenizedStr := strings.TrimLeft(strings.Trim(req.Header[HeaderName][0], " "), HeaderScheme)
-			//jwt := services.NewJwtService(appRouter.httpTimeout)
-			//claims, err := jwt.ParseJWT(jwtTokenizedStr)
-			//log.Info(claims)
-			//if err != nil {
-			//	w.Header().Add("Expires", "true")
-			//	accessDenied(w, errors.New("access denied"))
-			//	return
-			//}
-			//
-			//var user types.User
-			//jsonData, _ := json.Marshal(claims["obj"])
-			//err = json.NewDecoder(strings.NewReader(string(jsonData))).Decode(&user)
-			//
-			//if err != nil {
-			//	log.Error("Error", err)
-			//}
-			//
-			//next.ServeHTTP(w, req)
+			//non-secured page should be served their corresponding http handler
+			if !currentHttpRequest.Secure {
+				next.ServeHTTP(w, req)
+				return
+			}
 
+			//Access-Control-Level and JWT Expiring Validations
+			if req.Header[HeaderName] == nil {
+				accessDenied(w, errors.New(fmt.Sprintf("'%s' not found in the HTTP Request Header", HeaderName)))
+				return
+			}
+
+			jwtTokenizedStr := strings.Trim(strings.TrimLeft(req.Header[HeaderName][0], HeaderScheme), " ")
+			jwt := services.NewJwtService(appRouter.httpTimeout)
+			claims, err := jwt.ParseJWT(jwtTokenizedStr)
+			if err != nil {
+				accessDenied(w, errors.New(fmt.Sprintf("access denied. %v", err)))
+				return
+			}
+
+			modf, frac := math.Modf(claims["exp"].(float64))
+			expiredAt := time.Unix(int64(modf), int64(frac*(1e9)))
+			if time.Now().After(expiredAt) {
+				w.Header().Add("Expires", "true")
+				accessDenied(w, errors.New("unauthorized. Token expired"))
+				return
+			}
+
+			var user types.User
+			jsonData, _ := json.Marshal(claims["obj"])
+			err = json.NewDecoder(strings.NewReader(string(jsonData))).Decode(&user)
+			if err != nil {
+				accessDenied(w, errors.New(fmt.Sprintf("access denied. %v", err)))
+				log.Error("Error", err)
+			}
+
+			//Empty 'PermitRoles' signifies wild card ACL. Authorization check isn't required. Just authentication
+			if len(currentHttpRequest.PermitRoles) == 0 {
+				next.ServeHTTP(w, req)
+				return
+			}
+			for i := range user.Roles {
+				if slices.Contains(currentHttpRequest.PermitRoles, user.Roles[i]) {
+					next.ServeHTTP(w, req)
+					return
+				}
+			}
+			accessDenied(w, errors.New(fmt.Sprintf("unauthorised accces to this URL")))
 		})
 	}
 }
