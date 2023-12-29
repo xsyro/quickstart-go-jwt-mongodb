@@ -1,4 +1,4 @@
-package api
+package controllers
 
 import (
 	"context"
@@ -9,23 +9,21 @@ import (
 	"net/http"
 	"quickstart-go-jwt-mongodb/internal"
 	"quickstart-go-jwt-mongodb/repositories"
+	"quickstart-go-jwt-mongodb/server"
 	"quickstart-go-jwt-mongodb/services"
 	"quickstart-go-jwt-mongodb/types"
 	"time"
 )
 
-func AuthHandlers(resources *WithResource) {
-	resources.HttpRequest.RequestRegistry(createAccount(resources.MongoDatabase))
-	resources.HttpRequest.RequestRegistry(authenticate(resources.MongoDatabase))
-	resources.HttpRequest.RequestRegistry(refreshToken(resources.MongoDatabase))
-	resources.HttpRequest.RequestRegistry(listCustomers(resources.MongoDatabase))
-
+type auth struct {
+	Username string `json:"username" validate:"required,email"`
+	Password string `json:"password"`
 }
 
-func createAccount(database internal.MongoDatabase) HttpRequest {
-	return HttpRequest{
+func CreateAccount(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:    "/account/create",
-		Method: POST,
+		Method: server.POST,
 		Secure: false,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -33,54 +31,49 @@ func createAccount(database internal.MongoDatabase) HttpRequest {
 			var user = types.User{
 				BaseModel: types.NewBaseModel(),
 			}
-			err := parseReqToJson(req, &user)
+			err := server.ParseReqToJson(req, &user)
 			if err != nil {
-				httpError(w, err)
+				server.HttpError(w, err)
 				return
 			}
 
 			userRepository := repositories.NewUserRepository(database)
 			if userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: user.Email}) {
-				httpError(w, errors.New(fmt.Sprintf("%s already exists", user.Email)))
+				server.HttpError(w, errors.New(fmt.Sprintf("%s already exists", user.Email)))
 				return
 			}
 			password, err := generateHashPassword(user.PasswordRequestBody)
 			if err != nil {
-				httpError(w, errors.New("unable to hash password. Please try again later"))
+				server.HttpError(w, errors.New("unable to hash password. Please try again later"))
 				return
 			}
 			user.Password = password
 			objectId, err := userRepository.CreateOne(ctx, &user)
 			if err != nil {
-				httpError(w, err)
+				server.HttpError(w, err)
 				return
 			}
 			user.ID = objectId
 			user.PasswordRequestBody = ""
-			httpResponse(w, http.StatusCreated, user)
+			server.HttpResponse(w, http.StatusCreated, user)
 			return
 		},
 	}
 }
 
-type auth struct {
-	Username string `json:"username" validate:"required,email"`
-	Password string `json:"password"`
-}
-
-func authenticate(database internal.MongoDatabase) HttpRequest {
-	return HttpRequest{
+func Authenticate(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:    "/account/auth",
-		Method: POST,
+		Method: server.POST,
 		Secure: false,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			var user types.User
 			var auth auth
-			err := parseReqToJson(req, &auth)
+			err := server.ParseReqToJson(req, &auth)
 			if err != nil {
-				httpError(w, err)
+				server.HttpError(w, err)
 				return
 			}
 
@@ -88,12 +81,12 @@ func authenticate(database internal.MongoDatabase) HttpRequest {
 			tokenRepository := repositories.NewTokenRepository(database)
 			findOne := userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: auth.Username})
 			if !findOne {
-				httpError(w, errors.New(fmt.Sprintf("Invalid Username. %s does not exists", auth.Username)))
+				server.HttpError(w, errors.New(fmt.Sprintf("Invalid Username. %s does not exists", auth.Username)))
 				return
 			}
 
 			if !checkPasswordHash(auth.Password, user.Password) {
-				httpError(w, errors.New("invalid Credential supplied. Please check username/password"))
+				server.HttpError(w, errors.New("invalid Credential supplied. Please check username/password"))
 				return
 			}
 
@@ -124,20 +117,20 @@ func authenticate(database internal.MongoDatabase) HttpRequest {
 			token.ID = tokenId
 
 			if err != nil {
-				httpError(w, errors.New("unable to generated token. Please try again later"))
+				server.HttpError(w, errors.New("unable to generated token. Please try again later"))
 				return
 			}
 
-			httpResponse(w, http.StatusCreated, token)
+			server.HttpResponse(w, http.StatusCreated, token)
 			return
 		},
 	}
 }
 
-func refreshToken(database internal.MongoDatabase) HttpRequest {
-	return HttpRequest{
+func RefreshToken(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:    "/account/refresh-token",
-		Method: GET,
+		Method: server.GET,
 		Secure: false,
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -145,13 +138,13 @@ func refreshToken(database internal.MongoDatabase) HttpRequest {
 			cookie, err := req.Cookie("jwt")
 			var email string
 			if err != nil {
-				accessDenied(w, errors.New("'jwt' cookie do not exist in cookie-header"))
+				server.AccessDenied(w, errors.New("'jwt' cookie do not exist in cookie-header"))
 				return
 			}
 			jwtService := services.NewJwtService(ctx)
 			jwt, err := jwtService.ClaimToken(cookie.Value, &email)
 			if err != nil {
-				accessDenied(w, errors.New("invalid jwt token supplied"))
+				server.AccessDenied(w, errors.New("invalid jwt token supplied"))
 				return
 			}
 			expirationTime, _ := jwt.GetExpirationTime()
@@ -159,7 +152,7 @@ func refreshToken(database internal.MongoDatabase) HttpRequest {
 				return
 			}
 			if time.Now().After(expirationTime.Time) {
-				accessDenied(w, errors.New("unauthorized. Token expired"))
+				server.AccessDenied(w, errors.New("unauthorized. Token expired"))
 				return
 			}
 
@@ -180,19 +173,19 @@ func refreshToken(database internal.MongoDatabase) HttpRequest {
 				return
 			}
 			token.ID = id
-			httpResponse(w, http.StatusCreated, token)
+			server.HttpResponse(w, http.StatusCreated, token)
 			return
 		},
 	}
 }
 
 // listCustomers - Empty '[]PermitRoles' is wildcard access to all users.
-// By simply excluding the PermitRole filed from the HttpRequest struct, it permits all secured users to
+// By simply excluding the PermitRole filed from the Controller struct, it permits all secured users to
 // access the page
-func listCustomers(database internal.MongoDatabase) HttpRequest {
-	return HttpRequest{
+func listCustomers(database internal.MongoDatabase) server.Controller {
+	return server.Controller{
 		Uri:    "/user/customer-records",
-		Method: GET,
+		Method: server.GET,
 		Secure: true,
 		Callback: func(responseWriter http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -201,10 +194,10 @@ func listCustomers(database internal.MongoDatabase) HttpRequest {
 			var users []types.User
 			err := userRepository.FindAll(ctx, &users)
 			if err != nil {
-				httpError(responseWriter, err)
+				server.HttpError(responseWriter, err)
 				return
 			}
-			httpResponse(responseWriter, http.StatusOK, users)
+			server.HttpResponse(responseWriter, http.StatusOK, users)
 		},
 	}
 }

@@ -1,7 +1,10 @@
-package api
+package controllers
 
 import (
+	"context"
 	"net/http"
+	"quickstart-go-jwt-mongodb/internal"
+	"quickstart-go-jwt-mongodb/server"
 )
 
 // Provide personal preferences to roles
@@ -10,10 +13,10 @@ const (
 	Role2 = "SALES_PERSON"
 )
 
-func securedRole1Only() HttpRequest {
-	return HttpRequest{
+func SecuredRole1Only(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:         "/secured/role-1",
-		Method:      GET,
+		Method:      server.GET,
 		Secure:      true,
 		PermitRoles: []string{Role1},
 		Callback: func(w http.ResponseWriter, req *http.Request) {
@@ -22,10 +25,10 @@ func securedRole1Only() HttpRequest {
 	}
 }
 
-func securedRole2Only() HttpRequest {
-	return HttpRequest{
+func SecuredRole2Only(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:         "/secured/role-2",
-		Method:      GET,
+		Method:      server.GET,
 		Secure:      true,
 		PermitRoles: []string{Role2},
 		Callback: func(w http.ResponseWriter, req *http.Request) {
@@ -34,22 +37,14 @@ func securedRole2Only() HttpRequest {
 	}
 }
 
-func securedRole1And2Only() HttpRequest {
-	return HttpRequest{
+func SecuredRole1And2Only(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
 		Uri:         "/secured/role-1-and-2",
-		Method:      GET,
+		Method:      server.GET,
 		Secure:      true,
 		PermitRoles: []string{Role1, Role2},
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte("Access granted!"))
 		},
 	}
-}
-
-func UserHandlers(resources *WithResource) {
-
-	resources.HttpRequest.RequestRegistry(securedRole1Only())
-	resources.HttpRequest.RequestRegistry(securedRole2Only())
-	resources.HttpRequest.RequestRegistry(securedRole1And2Only())
-
 }

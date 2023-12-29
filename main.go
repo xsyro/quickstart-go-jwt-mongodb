@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	log "github.com/sirupsen/logrus"
-	"quickstart-go-jwt-mongodb/api"
 	"quickstart-go-jwt-mongodb/internal"
 	"quickstart-go-jwt-mongodb/middleware"
+	"quickstart-go-jwt-mongodb/route"
+	"quickstart-go-jwt-mongodb/server"
 	"time"
 )
 
@@ -13,10 +14,10 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	var (
 		mongoClient        *internal.MongoClient
-		httpRequestHandler api.RequestHandler
+		httpRequestHandler server.RequestHandler
 	)
-	timeout, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-	httpRequestHandler = api.NewHttpRequestHandler(timeout)
+	parentHttpCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(40*time.Second))
+	httpRequestHandler = server.NewHttpRequestHandler(parentHttpCtx)
 
 	defer func() {
 		log.Debug("HTTP PORT TERMINATING...CLOSING RESOURCES!!!")
@@ -31,17 +32,13 @@ func main() {
 		log.Warnf("[RECOVERY_FROM_FAILURE] %v", r)
 	}
 
-	apiResources := api.WithResource{
-		HttpRequest:   httpRequestHandler,
-		MongoDatabase: mongoDb,
-	}
-
-	api.StaticHandlers(&apiResources)
-	api.AuthHandlers(&apiResources)
-	api.UserHandlers(&apiResources)
+	route.Routes(httpRequestHandler, mongoDb, parentHttpCtx)
 
 	//Use middleware to intermediate every requests
-	httpRequestHandler.HandleMiddlewares(middleware.HeadersMiddleware(), httpRequestHandler.SecureMiddleware())
+	httpRequestHandler.HandleMiddlewares(
+		middleware.HeadersMiddleware(),
+		middleware.SecureMiddleware(httpRequestHandler.GetControllers()),
+	)
 
 	httpRequestHandler.Serve()
 
