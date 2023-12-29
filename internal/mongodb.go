@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"os"
+	"quickstart-go-jwt-mongodb/models"
 	"time"
 )
 
@@ -41,10 +41,10 @@ var (
 // NewMongoDbConn Singleton instance
 // Reuse this client. You can use this same client instance to perform multiple tasks, instead of creating a new one each time.
 // The client type is safe for concurrent use by multiple goroutines
-func NewMongoDbConn() *MongoClient {
+func NewMongoDbConn(envVar models.EnvVar) *MongoClient {
 	var (
 		err         error
-		mongoUri    = os.Getenv("MONGO_DB_URI")
+		mongoUri    = envVar.MongoDbUri
 		timeout     = 6 * time.Second
 		client      *mongo.Client
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
@@ -70,7 +70,7 @@ func NewMongoDbConn() *MongoClient {
 	if err != nil && currentRetryCount <= maxRetryCount {
 		log.Errorf("[MongoDB] connect attempt failed. ActiveRequest retry %d of %d.\n%v", currentRetryCount, maxRetryCount, err)
 		currentRetryCount++
-		NewMongoDbConn()
+		NewMongoDbConn(envVar)
 	}
 	if currentRetryCount >= maxRetryCount {
 		//Throw panic if retries exceeded without any successful connection
@@ -82,7 +82,7 @@ func NewMongoDbConn() *MongoClient {
 	}
 	log.Debugf("successfully connected to MongoDB %s", mongoUri)
 
-	var database = client.Database(os.Getenv("MONGO_DB_NAME"))
+	var database = client.Database(envVar.MongoDbName)
 	return &MongoClient{
 		client:   client,
 		Database: database,

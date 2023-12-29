@@ -8,10 +8,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"quickstart-go-jwt-mongodb/internal"
+	"quickstart-go-jwt-mongodb/models"
 	"quickstart-go-jwt-mongodb/repositories"
 	"quickstart-go-jwt-mongodb/server"
 	"quickstart-go-jwt-mongodb/services"
-	"quickstart-go-jwt-mongodb/types"
 	"time"
 )
 
@@ -28,8 +28,49 @@ func CreateAccount(database internal.MongoDatabase, ctx context.Context) server.
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			var user = types.User{
-				BaseModel: types.NewBaseModel(),
+			var user = models.User{
+				BaseModel: models.NewBaseModel(),
+			}
+			err := server.ParseReqToJson(req, &user)
+			if err != nil {
+				server.HttpError(w, err)
+				return
+			}
+
+			userRepository := repositories.NewUserRepository(database)
+			if userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: user.Email}) {
+				server.HttpError(w, errors.New(fmt.Sprintf("%s already exists", user.Email)))
+				return
+			}
+			password, err := generateHashPassword(user.PasswordRequestBody)
+			if err != nil {
+				server.HttpError(w, errors.New("unable to hash password. Please try again later"))
+				return
+			}
+			user.Password = password
+			objectId, err := userRepository.CreateOne(ctx, &user)
+			if err != nil {
+				server.HttpError(w, err)
+				return
+			}
+			user.ID = objectId
+			user.PasswordRequestBody = ""
+			server.HttpResponse(w, http.StatusCreated, user)
+			return
+		},
+	}
+}
+
+func UpdateUser(database internal.MongoDatabase, ctx context.Context) server.Controller {
+	return server.Controller{
+		Uri:    "/account/create",
+		Method: server.PUT,
+		Secure: true,
+		Callback: func(w http.ResponseWriter, req *http.Request) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			var user = models.User{
+				BaseModel: models.NewBaseModel(),
 			}
 			err := server.ParseReqToJson(req, &user)
 			if err != nil {
@@ -69,7 +110,7 @@ func Authenticate(database internal.MongoDatabase, ctx context.Context) server.C
 		Callback: func(w http.ResponseWriter, req *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			var user types.User
+			var user models.User
 			var auth auth
 			err := server.ParseReqToJson(req, &auth)
 			if err != nil {
@@ -90,14 +131,14 @@ func Authenticate(database internal.MongoDatabase, ctx context.Context) server.C
 				return
 			}
 
-			jwtService := services.NewJwtService(ctx)
+			jwtService := services.NewJwtService(ctx, models.LoadEnvironmentVariables())
 			extraClaims := map[string]any{
 				"iss": req.Host,
 			}
 			accessTokenStr, err := jwtService.GenerateJWT(user, 30*time.Minute, extraClaims)
 			refreshTokenStr, err := jwtService.GenerateJWT(user.Email, 24*time.Hour, extraClaims)
-			token := types.Token{
-				BaseModel:    types.NewBaseModel(),
+			token := models.Token{
+				BaseModel:    models.NewBaseModel(),
 				AccessToken:  accessTokenStr,
 				RefreshToken: refreshTokenStr,
 			}
@@ -141,7 +182,7 @@ func RefreshToken(database internal.MongoDatabase, ctx context.Context) server.C
 				server.AccessDenied(w, errors.New("'jwt' cookie do not exist in cookie-header"))
 				return
 			}
-			jwtService := services.NewJwtService(ctx)
+			jwtService := services.NewJwtService(ctx, models.LoadEnvironmentVariables())
 			jwt, err := jwtService.ClaimToken(cookie.Value, &email)
 			if err != nil {
 				server.AccessDenied(w, errors.New("invalid jwt token supplied"))
@@ -157,13 +198,13 @@ func RefreshToken(database internal.MongoDatabase, ctx context.Context) server.C
 			}
 
 			userRepository := repositories.NewUserRepository(database)
-			var user types.User
+			var user models.User
 			userRepository.FindOne(ctx, &user, repositories.Filter{Key: "email", Value: email})
 
 			//Create a one-time only access token again
 			accessTokenStr, err := jwtService.GenerateJWT(user, 10*time.Hour)
-			token := types.Token{
-				BaseModel:   types.NewBaseModel(),
+			token := models.Token{
+				BaseModel:   models.NewBaseModel(),
 				AccessToken: accessTokenStr,
 			}
 
@@ -191,7 +232,7 @@ func listCustomers(database internal.MongoDatabase) server.Controller {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			userRepository := repositories.NewUserRepository(database)
-			var users []types.User
+			var users []models.User
 			err := userRepository.FindAll(ctx, &users)
 			if err != nil {
 				server.HttpError(responseWriter, err)

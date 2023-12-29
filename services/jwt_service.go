@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"quickstart-go-jwt-mongodb/models"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,19 +13,18 @@ import (
 )
 
 type jwtService struct {
-	//Tokenizer   interface{}
-	//TokenString string
-	ctx context.Context
+	ctx           context.Context
+	jwtSigningKey string
 }
 
 var (
 	JwtSigningAlg = jwt.SigningMethodHS256
-	jwtSigningKey = []byte(os.Getenv("JWT_SECRET"))
 )
 
-func NewJwtService(ctx context.Context) *jwtService {
+func NewJwtService(ctx context.Context, envVar models.EnvVar) *jwtService {
 	return &jwtService{
-		ctx: ctx,
+		ctx:           ctx,
+		jwtSigningKey: envVar.JwtSecret,
 	}
 }
 
@@ -45,7 +44,7 @@ func (j *jwtService) GenerateJWT(sub interface{}, expiresAt time.Duration, extra
 		}
 	}
 
-	tokenStr, err := token.SignedString(jwtSigningKey)
+	tokenStr, err := token.SignedString([]byte(j.jwtSigningKey))
 
 	if err != nil {
 		log.Error("error creating jwt token", err)
@@ -59,7 +58,7 @@ func (j *jwtService) ClaimToken(tokenizedString string, sub interface{}) (jwt.Cl
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("There was an error in parsing")
 		}
-		return jwtSigningKey, nil
+		return j.jwtSigningKey, nil
 	})
 	claims, ok := jwtToken.Claims.(jwt.MapClaims)
 	subStr, err := claims.GetSubject()

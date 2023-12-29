@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"net/http"
-	"os"
+	"quickstart-go-jwt-mongodb/models"
 	"time"
 )
 
@@ -53,12 +53,10 @@ const (
 	DELETE Verb = "DELETE"
 )
 
-var BaseUrlPrefix = os.Getenv("BASE_URI_PREFIX")
-
-func NewHttpRequestHandler(httpTimeoutCtx context.Context) RequestHandler {
+func NewHttpRequestHandler(httpTimeoutCtx context.Context, envVar models.EnvVar) RequestHandler {
 	return &Handler{
-		router:          mux.NewRouter().PathPrefix(BaseUrlPrefix).Subrouter(),
-		port:            os.Getenv("HTTP_PORT"),
+		router:          mux.NewRouter().PathPrefix(envVar.BaseUrlPrefix).Subrouter(),
+		port:            envVar.HttpPort,
 		httpTimeout:     httpTimeoutCtx,
 		requestRegistry: []Controller{},
 	}
@@ -81,9 +79,10 @@ func (appRouter *Handler) Serve() {
 	}
 
 	server := &http.Server{
-		Addr:        fmt.Sprintf("%s:%s", "0.0.0.0", appRouter.port),
-		ReadTimeout: 60 * time.Second,
-		Handler:     appRouter.router,
+		Addr:         fmt.Sprintf("%s:%s", "0.0.0.0", appRouter.port),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		Handler:      appRouter.router,
 	}
 	log.Infof("serving HTTP Request on port %s", appRouter.port)
 	err := server.ListenAndServe()
