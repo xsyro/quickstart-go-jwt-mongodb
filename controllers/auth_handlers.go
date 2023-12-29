@@ -12,6 +12,7 @@ import (
 	"quickstart-go-jwt-mongodb/repositories"
 	"quickstart-go-jwt-mongodb/server"
 	"quickstart-go-jwt-mongodb/services"
+	"sync"
 	"time"
 )
 
@@ -135,8 +136,21 @@ func Authenticate(database internal.MongoDatabase, ctx context.Context) server.C
 			extraClaims := map[string]any{
 				"iss": req.Host,
 			}
-			accessTokenStr, err := jwtService.GenerateJWT(user, 30*time.Minute, extraClaims)
-			refreshTokenStr, err := jwtService.GenerateJWT(user.Email, 24*time.Hour, extraClaims)
+			var accessTokenStr string
+			var refreshTokenStr string
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				accessTokenStr, err = jwtService.GenerateJWT(user, 30*time.Minute, extraClaims)
+			}()
+
+			go func() {
+				defer wg.Done()
+				refreshTokenStr, err = jwtService.GenerateJWT(user.Email, 24*time.Hour, extraClaims)
+			}()
+			wg.Wait()
+
 			token := models.Token{
 				BaseModel:    models.NewBaseModel(),
 				AccessToken:  accessTokenStr,
